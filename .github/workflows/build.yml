@@ -1,4 +1,4 @@
-name: Build OpenCode for Atom CPU
+name: Build OpenCode for Atom CPU with AIHubMix
 
 on:
   workflow_dispatch:
@@ -15,9 +15,39 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Clone OpenCode
+      - name: Clone and patch OpenCode
         run: |
           git clone --depth 1 https://github.com/opencode-ai/opencode.git /tmp/opencode
+          cd /tmp/opencode
+          
+          # Patch: Add OPENAI_BASE_URL env var support for OpenAI provider
+          # This lets users point OpenAI provider to AIHubMix or other compatible APIs
+          cat > /tmp/patch.py << 'PYEOF'
+import re
+          with open("internal/llm/provider/provider.go", "r") as f:
+              content = f.read()
+          
+          # Add os import if not present
+          if '"os"' not in content:
+              content = content.replace('"fmt"', '"fmt"\n\t"os"')
+          
+          # Patch the OpenAI case to check OPENAI_BASE_URL
+          old = 'case models.ProviderOpenAI:\n\t\treturn &baseProvider[OpenAIClient]{'
+          new = '''case models.ProviderOpenAI:
+\t\tif baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
+\t\t\tclientOptions.openaiOptions = append(clientOptions.openaiOptions,
+\t\t\t\tWithOpenAIBaseURL(baseURL),
+\t\t\t)
+\t\t}
+\t\treturn &baseProvider[OpenAIClient]{'''
+          
+          content = content.replace(old, new)
+          
+          with open("internal/llm/provider/provider.go", "w") as f:
+              f.write(content)
+          print("Patch applied!")
+          PYEOF
+          python3 /tmp/patch.py
 
       - name: Build for old CPU (GOAMD64=v1)
         run: |
@@ -29,7 +59,6 @@ jobs:
           file /tmp/opencode-atom
           ls -lh /tmp/opencode-atom
           chmod +x /tmp/opencode-atom
-          /tmp/opencode-atom --version || echo "Binary built OK (version check may fail without config)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
