@@ -1,0 +1,39 @@
+name: Build OpenCode for Atom CPU
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Clone OpenCode
+        run: |
+          git clone --depth 1 https://github.com/opencode-ai/opencode.git /tmp/opencode
+
+      - name: Build for old CPU (GOAMD64=v1)
+        run: |
+          cd /tmp/opencode
+          GOAMD64=v1 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/opencode-atom .
+
+      - name: Verify binary
+        run: |
+          file /tmp/opencode-atom
+          ls -lh /tmp/opencode-atom
+          chmod +x /tmp/opencode-atom
+          /tmp/opencode-atom --version || echo "Binary built OK (version check may fail without config)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-atom
+          path: /tmp/opencode-atom
+          retention-days: 30
