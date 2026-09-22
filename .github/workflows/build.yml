@@ -1,4 +1,4 @@
-name: Build OpenCode for Atom CPU with AIHubMix
+name: Build OpenCode
 
 on:
   push:
@@ -16,50 +16,28 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Clone and patch OpenCode
-        run: |
-          git clone --depth 1 https://github.com/opencode-ai/opencode.git /tmp/opencode
-          cd /tmp/opencode
-          
-          # Patch: Add OPENAI_BASE_URL env var support for OpenAI provider
-          python3 << 'PYEOF'
-          import re
-          with open("internal/llm/provider/provider.go", "r") as f:
-              content = f.read()
-          
-          # Add os import if not present
-          if '"os"' not in content:
-              content = content.replace('"fmt"', '"fmt"\n\t"os"')
-          
-          # Patch the OpenAI case to check OPENAI_BASE_URL
-          old = 'case models.ProviderOpenAI:\n\t\treturn &baseProvider[OpenAIClient]{'
-          new = '''case models.ProviderOpenAI:
-\t\tif baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
-\t\t\tclientOptions.openaiOptions = append(clientOptions.openaiOptions,
-\t\t\t\tWithOpenAIBaseURL(baseURL),
-\t\t\t)
-\t\t}
-\t\treturn &baseProvider[OpenAIClient]{'''
-          
-          content = content.replace(old, new)
-          
-          with open("internal/llm/provider/provider.go", "w") as f:
-              f.write(content)
-          print("Patch applied!")
-          PYEOF
+      - name: Clone OpenCode
+        run: git clone --depth 1 https://github.com/opencode-ai/opencode.git /tmp/opencode
 
-      - name: Build for old CPU (GOAMD64=v1)
+      - name: Patch provider for OPENAI_BASE_URL
+        working-directory: /tmp/opencode
         run: |
-          cd /tmp/opencode
-          GOAMD64=v1 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/opencode-atom .
+          sed -i '/case models.ProviderOpenAI:/{
+            a\
+            \t\tif baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {\
+            \t\t\tclientOptions.openaiOptions = append(clientOptions.openaiOptions,\
+            \t\t\t\tWithOpenAIBaseURL(baseURL),\
+            \t\t\t)\
+            \t\t}
+          }' internal/llm/provider/provider.go
+          
+          grep -A8 "case models.ProviderOpenAI:" internal/llm/provider/provider.go
 
-      - name: Verify binary
-        run: |
-          file /tmp/opencode-atom
-          ls -lh /tmp/opencode-atom
-          chmod +x /tmp/opencode-atom
+      - name: Build
+        working-directory: /tmp/opencode
+        run: GOAMD64=v1 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/opencode-atom .
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: opencode-atom
