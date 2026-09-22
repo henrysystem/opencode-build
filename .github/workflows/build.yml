@@ -1,7 +1,8 @@
 name: Build OpenCode for Atom CPU with AIHubMix
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   build:
@@ -21,9 +22,8 @@ jobs:
           cd /tmp/opencode
           
           # Patch: Add OPENAI_BASE_URL env var support for OpenAI provider
-          # This lets users point OpenAI provider to AIHubMix or other compatible APIs
-          cat > /tmp/patch.py << 'PYEOF'
-import re
+          python3 << 'PYEOF'
+          import re
           with open("internal/llm/provider/provider.go", "r") as f:
               content = f.read()
           
@@ -47,7 +47,6 @@ import re
               f.write(content)
           print("Patch applied!")
           PYEOF
-          python3 /tmp/patch.py
 
       - name: Build for old CPU (GOAMD64=v1)
         run: |
